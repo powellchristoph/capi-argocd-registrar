@@ -9,6 +9,14 @@ updates:
         patterns:
           - "k8s.io/*"
           - "sigs.k8s.io/*"
+        # cluster-api is the core API this controller is built on. Its releases
+        # are coupled to specific k8s minor versions and must be updated manually
+        # alongside a full compile/test verification.
+        exclude-patterns:
+          - "sigs.k8s.io/cluster-api"
+    ignore:
+      # Ignore cluster-api automatic updates — must be done manually.
+      - dependency-name: "sigs.k8s.io/cluster-api"
 
   - package-ecosystem: "github-actions"
     directory: "/"
