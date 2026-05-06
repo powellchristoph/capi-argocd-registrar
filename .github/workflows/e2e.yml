@@ -73,7 +73,7 @@ jobs:
       # controller log tail.
       - name: Upload logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: e2e-logs-${{ github.run_id }}-${{ github.run_attempt }}
           path: logs/
