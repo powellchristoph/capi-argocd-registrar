@@ -18,11 +18,13 @@ linters:
       excludes:
         # G101: false-positive on constant names containing "token"
         - G101
-        # G117: bearerToken JSON field is intentional — it's the ArgoCD cluster secret format
-        - G117
   exclusions:
     rules:
       - path: "_test\\.go"
         linters:
           - gosec
           - errcheck
+      # G117 (bearerToken JSON field) is not in the gosec enum for v2.1.6;
+      # suppress via text match instead of gosec.excludes.
+      - linters: [gosec]
+        text: "bearerToken"
