@@ -1,0 +1,99 @@
+name: E2E
+
+# E2E tests provision a real CAPD workload cluster inside a Kind management
+# cluster. This takes ~20-30 minutes and requires ~6 GB of RAM, so it is NOT
+# run on every PR. Trigger it manually before a release or let the nightly
+# schedule catch regressions.
+#
+# Self-hosted runners: if the standard GitHub-hosted runner (7 GB) is too
+# tight, add a label to your self-hosted runner and swap the runs-on value:
+#   runs-on: [self-hosted, e2e]
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Nightly at 03:00 UTC on the default branch.
+    - cron: '0 3 * * *'
+
+jobs:
+  e2e:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    permissions:
+      contents: read
+      packages: read
+
+    env:
+      KIND_CLUSTER_NAME: capi-e2e
+      IMAGE_REPO: ghcr.io/${{ github.repository }}
+      IMAGE_TAG: e2e-${{ github.sha }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # task is used by the e2e and e2e-teardown targets.
+      - uses: arduino/setup-task@v2
+
+      # kind CLI only — the cluster is created by setup-e2e.sh.
+      - name: Install kind
+        uses: helm/kind-action@v1
+        with:
+          install_only: true
+
+      # Pin to the same version used by setup-e2e.sh (v1.9.0 providers).
+      - name: Install clusterctl
+        run: |
+          curl -fsSL -o /usr/local/bin/clusterctl \
+            "https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.9.0/clusterctl-linux-amd64"
+          chmod +x /usr/local/bin/clusterctl
+
+      - name: Install helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.15.3
+
+      - name: Set up e2e environment
+        run: bash scripts/setup-e2e.sh
+        env:
+          EXP_CLUSTER_RESOURCE_SET: "true"
+
+      - name: Run e2e tests
+        run: task e2e
+
+      # Always collect logs so failures are diagnosable even when the test
+      # runner exits non-zero.  On success the directory will contain the
+      # JUnit XML and the full test transcript; on failure it also has the
+      # controller log tail.
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-logs-${{ github.run_id }}-${{ github.run_attempt }}
+          path: logs/
+          # Keep for a week — long enough to correlate with a release but
+          # avoids accumulating gigabytes of old runs.
+          retention-days: 7
+
+      # Publish the JUnit XML as a GitHub check so test results appear in the
+      # Actions UI without having to dig through the raw log.
+      - name: Publish test results
+        if: always()
+        uses: mikepenz/action-junit-report@v4
+        with:
+          report_paths: logs/junit-e2e.xml
+          # Let the upload-artifact step preserve the file; do not fail if
+          # the XML is missing (e.g. setup failed before tests ran).
+          require_tests: false
+
+      # Tear down even if tests failed so we do not leak Kind clusters or
+      # orphaned Docker containers on the runner.
+      - name: Tear down
+        if: always()
+        run: task e2e-teardown

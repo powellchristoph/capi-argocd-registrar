@@ -1,0 +1,10 @@
+apiVersion: v2
+name: capi-argocd-registrar
+description: Automatically registers CAPI-provisioned clusters into ArgoCD
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - cluster-api
+  - argocd
+  - gitops

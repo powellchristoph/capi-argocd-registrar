@@ -1,0 +1,28 @@
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - govet
+    - errcheck
+    - staticcheck
+    - ineffassign
+    - unused
+    - gosec
+    - bodyclose
+    - noctx
+    - gocritic
+    - misspell
+  settings:
+    gosec:
+      excludes:
+        # G101: false-positive on constant names containing "token"
+        - G101
+        # G117: bearerToken JSON field is intentional — it's the ArgoCD cluster secret format
+        - G117
+  exclusions:
+    rules:
+      - path: "_test\\.go"
+        linters:
+          - gosec
+          - errcheck

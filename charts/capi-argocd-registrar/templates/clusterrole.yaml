@@ -1,0 +1,20 @@
+{{- if .Values.rbac.create }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "capi-argocd-registrar.fullname" . }}
+  labels:
+    {{- include "capi-argocd-registrar.labels" . | nindent 4 }}
+rules:
+  # Watch CAPI Cluster objects and manage finalizers
+  - apiGroups: ["cluster.x-k8s.io"]
+    resources: ["clusters"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+  - apiGroups: ["cluster.x-k8s.io"]
+    resources: ["clusters/finalizers"]
+    verbs: ["update"]
+  # Read kubeconfig secrets from cluster namespaces
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch"]
+{{- end }}

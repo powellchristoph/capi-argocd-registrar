@@ -1,0 +1,123 @@
+version: '3'
+
+vars:
+  IMAGE_REPO: ghcr.io/drydock-dev/capi-argocd-registrar
+  IMAGE_TAG: '{{.IMAGE_TAG | default "latest"}}'
+  ARGOCD_NAMESPACE: '{{.ARGOCD_NAMESPACE | default "argocd"}}'
+  KIND_CLUSTER_NAME: '{{.KIND_CLUSTER_NAME | default "capi-e2e"}}'
+  E2E_IMAGE_TAG: '{{.E2E_IMAGE_TAG | default "e2e-test"}}'
+
+tasks:
+  build:
+    desc: Compile the controller binary
+    cmds:
+      - go build -o bin/manager ./cmd/main.go
+    generates:
+      - bin/manager
+
+  run:
+    desc: Run the controller locally against the current kubeconfig
+    cmds:
+      - go run ./cmd/main.go
+          --argocd-namespace={{.ARGOCD_NAMESPACE}}
+          --leader-elect=false
+    env:
+      KUBECONFIG: '{{.KUBECONFIG | default (printf "%s/.kube/config" .HOME)}}'
+
+  lint:
+    desc: Run golangci-lint
+    cmds:
+      - golangci-lint run ./...
+
+  test:
+    desc: Run unit tests
+    cmds:
+      - go test ./... -v -count=1
+
+  helm-lint:
+    desc: Lint the Helm chart
+    cmds:
+      - helm lint charts/capi-argocd-registrar
+
+  docker-build:
+    desc: Build the controller container image
+    cmds:
+      - docker build -t {{.IMAGE_REPO}}:{{.IMAGE_TAG}} .
+
+  push:
+    desc: Build and push the container image to the registry
+    deps: [docker-build]
+    cmds:
+      - docker push {{.IMAGE_REPO}}:{{.IMAGE_TAG}}
+
+  tidy:
+    desc: Tidy go modules
+    cmds:
+      - go mod tidy
+
+  install-deps:
+    desc: Install all required CLI dependencies (macOS only, uses Homebrew)
+    cmds:
+      - bash scripts/install-deps.sh
+
+  e2e-full:
+    desc: "Run the full e2e test suite: setup, test, and teardown"
+    cmds:
+      - defer:
+          task: e2e-teardown
+      - task: e2e-setup
+      - task: e2e
+
+  e2e-setup:
+    desc: Create Kind cluster and install CAPI, ArgoCD, and the controller for e2e testing
+    cmds:
+      - IMAGE_REPO={{.IMAGE_REPO}} IMAGE_TAG={{.E2E_IMAGE_TAG}} KIND_CLUSTER_NAME={{.KIND_CLUSTER_NAME}} bash scripts/setup-e2e.sh
+
+  e2e:
+    desc: Run e2e tests against the Kind cluster (requires e2e-setup first)
+    cmds:
+      - |
+        set -eo pipefail
+        KUBECONFIG="$(mktemp /tmp/kubeconfig-{{.KIND_CLUSTER_NAME}}.XXXXXX)"
+        trap 'rm -f "${KUBECONFIG}"' EXIT
+        kind get kubeconfig --name {{.KIND_CLUSTER_NAME}} > "${KUBECONFIG}"
+        export KUBECONFIG
+
+        LOG_DIR="${PWD}/logs"
+        mkdir -p "${LOG_DIR}"
+        TEST_LOG="${LOG_DIR}/e2e-test.log"
+        JUNIT_REPORT="${LOG_DIR}/junit-e2e.xml"
+
+        echo "==> Running e2e tests..."
+        if ! go test ./test/e2e/... \
+              -tags e2e -v -count=1 -timeout 25m \
+              -ginkgo.junit-report="${JUNIT_REPORT}" \
+              2>&1 | tee "${TEST_LOG}"; then
+          CONTROLLER_LOG="${LOG_DIR}/e2e-failure.log"
+          echo "---"
+          echo "--- E2E tests failed. Logs: ${TEST_LOG}"
+          echo "--- Fetching controller logs..."
+          echo "---"
+          kubectl logs -n capi-argocd-registrar \
+            -l app.kubernetes.io/instance=capi-argocd-registrar \
+            --tail=200 2>&1 | tee "${CONTROLLER_LOG}"
+          echo "---"
+          echo "--- Controller logs: ${CONTROLLER_LOG}"
+          exit 1
+        fi
+
+  e2e-teardown:
+    desc: Delete the e2e Kind cluster
+    cmds:
+      - KIND_CLUSTER_NAME={{.KIND_CLUSTER_NAME}} bash scripts/teardown-e2e.sh
+
+  cleanup:
+    desc: Remove all build artifacts, test logs, and e2e resources
+    cmds:
+      - task: e2e-teardown
+      - echo "==> Removing build artifacts and logs..."
+      - rm -rf ./bin ./logs
+      - echo "==> Pruning docker volumes..."
+      - docker volume prune -f
+      - echo "==> Removing e2e docker image..."
+      - docker rmi {{.IMAGE_REPO}}:{{.E2E_IMAGE_TAG}} 2>/dev/null || true

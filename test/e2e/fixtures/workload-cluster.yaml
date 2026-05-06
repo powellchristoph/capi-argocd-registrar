@@ -1,0 +1,77 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: e2e-test
+---
+apiVersion: cluster.x-k8s.io/v1beta1
+kind: Cluster
+metadata:
+  name: e2e-workload
+  namespace: e2e-test
+  labels:
+    platform.io/env: e2e
+    platform.io/region: local
+spec:
+  clusterNetwork:
+    pods:
+      cidrBlocks: ["192.168.0.0/16"]
+    services:
+      cidrBlocks: ["10.128.0.0/12"]
+    serviceDomain: "cluster.local"
+  controlPlaneRef:
+    apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+    kind: KubeadmControlPlane
+    name: e2e-workload-control-plane
+  infrastructureRef:
+    apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+    kind: DockerCluster
+    name: e2e-workload
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: DockerCluster
+metadata:
+  name: e2e-workload
+  namespace: e2e-test
+spec: {}
+---
+apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+kind: KubeadmControlPlane
+metadata:
+  name: e2e-workload-control-plane
+  namespace: e2e-test
+spec:
+  replicas: 1
+  version: v1.31.2
+  machineTemplate:
+    infrastructureRef:
+      apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+      kind: DockerMachineTemplate
+      name: e2e-workload-control-plane
+  kubeadmConfigSpec:
+    clusterConfiguration:
+      apiServer:
+        certSANs:
+        - localhost
+        - 127.0.0.1
+      dns: {}
+      etcd: {}
+      networking: {}
+      scheduler: {}
+    initConfiguration:
+      localAPIEndpoint: {}
+      nodeRegistration: {}
+    joinConfiguration:
+      discovery: {}
+      nodeRegistration: {}
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: DockerMachineTemplate
+metadata:
+  name: e2e-workload-control-plane
+  namespace: e2e-test
+spec:
+  template:
+    spec:
+      extraMounts:
+      - hostPath: /var/run/docker.sock
+        containerPath: /var/run/docker.sock

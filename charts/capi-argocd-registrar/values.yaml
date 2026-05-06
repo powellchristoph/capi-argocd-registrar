@@ -1,0 +1,78 @@
+replicaCount: 1
+
+
+image:
+  repository: ghcr.io/drydock-dev/capi-argocd-registrar
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# Namespace where ArgoCD is installed.
+argocdNamespace: argocd
+
+# Additional labels to apply to every ArgoCD cluster secret, merged after
+# cluster labels so these take precedence on conflicts.
+extraSecretLabels: {}
+
+# Label key prefixes to exclude when copying labels from a CAPI Cluster to
+# the ArgoCD cluster secret. Useful for filtering out tooling labels that
+# have no meaning in ArgoCD, e.g. Helm release labels.
+# Common entries:
+ignoredLabelPrefixes:
+   - "app.kubernetes.io"
+   - "helm.sh"
+
+# Enable leader election (recommended for production).
+leaderElect: true
+
+# Pod-level security context.
+# See https://kubernetes.io/docs/tasks/configure-pod-container/security-context/
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+
+# Container-level security context.
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+# Liveness and readiness probes.
+# See https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: 8081
+  initialDelaySeconds: 15
+  periodSeconds: 20
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: 8081
+  initialDelaySeconds: 5
+  periodSeconds: 10
+
+networkPolicy:
+  enabled: false
+
+pdb:
+  # Set to true to create a PodDisruptionBudget for the deployment.
+  create: false
+  minAvailable: 1
+
+rbac:
+  create: true
+
+serviceAccount:
+  create: true
+  name: ""
+
+resources:
+  limits:
+    cpu: 100m
+    memory: 64Mi
+  requests:
+    cpu: 10m
+    memory: 32Mi

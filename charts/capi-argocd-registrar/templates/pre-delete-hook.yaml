@@ -1,0 +1,97 @@
+{{- if .Values.rbac.create }}
+# Strips the controller finalizer from all CAPI Cluster objects before the
+# chart is uninstalled. Without this, clusters that have the finalizer would
+# be stuck in Terminating forever once the controller pod is gone.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "capi-argocd-registrar.fullname" . }}-pre-delete
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "capi-argocd-registrar.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-delete
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": hook-succeeded,hook-failed
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "capi-argocd-registrar.fullname" . }}-pre-delete
+  labels:
+    {{- include "capi-argocd-registrar.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-delete
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": hook-succeeded,hook-failed
+rules:
+  - apiGroups: ["cluster.x-k8s.io"]
+    resources: ["clusters"]
+    verbs: ["get", "list", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "capi-argocd-registrar.fullname" . }}-pre-delete
+  labels:
+    {{- include "capi-argocd-registrar.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-delete
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": hook-succeeded,hook-failed
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "capi-argocd-registrar.fullname" . }}-pre-delete
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "capi-argocd-registrar.fullname" . }}-pre-delete
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "capi-argocd-registrar.fullname" . }}-pre-delete
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "capi-argocd-registrar.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-delete
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": hook-succeeded,hook-failed
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: {{ include "capi-argocd-registrar.fullname" . }}-pre-delete
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: strip-finalizers
+          image: bitnami/kubectl:latest
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          command:
+            - /bin/sh
+            - -c
+            - |
+              FINALIZER="capi-argocd-registrar.drydock-dev.github.com/finalizer"
+              kubectl get clusters.cluster.x-k8s.io \
+                --all-namespaces -o json | \
+              jq -r '.items[] | select(.metadata.finalizers[]? == "'"${FINALIZER}"'") |
+                "\(.metadata.namespace)/\(.metadata.name)"' | \
+              while IFS='/' read -r ns name; do
+                echo "Removing finalizer from ${ns}/${name}"
+                kubectl patch cluster.cluster.x-k8s.io "${name}" \
+                  -n "${ns}" \
+                  --type=json \
+                  -p='[{"op":"remove","path":"/metadata/finalizers","value":[]}]' || true
+              done
+              echo "Done"
+{{- end }}

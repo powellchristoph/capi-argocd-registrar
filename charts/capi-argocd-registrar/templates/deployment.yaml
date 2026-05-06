@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "capi-argocd-registrar.fullname" . }}
+  labels:
+    {{- include "capi-argocd-registrar.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "capi-argocd-registrar.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "capi-argocd-registrar.selectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "capi-argocd-registrar.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - --metrics-bind-address=:8080
+            - --health-probe-bind-address=:8081
+            {{- if .Values.leaderElect }}
+            - --leader-elect
+            {{- end }}
+            - --argocd-namespace={{ .Values.argocdNamespace }}
+            {{- range .Values.ignoredLabelPrefixes }}
+            - --ignore-label-prefix={{ . }}
+            {{- end }}
+            {{- range $key, $val := .Values.extraSecretLabels }}
+            - --extra-label={{ $key }}={{ $val }}
+            {{- end }}
+          ports:
+            - name: metrics
+              containerPort: 8080
+              protocol: TCP
+            - name: health
+              containerPort: 8081
+              protocol: TCP
+          livenessProbe:
+            {{- toYaml .Values.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}

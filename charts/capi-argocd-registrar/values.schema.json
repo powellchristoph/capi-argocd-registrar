@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "replicaCount": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "repository": { "type": "string" },
+        "tag":        { "type": "string" },
+        "pullPolicy": {
+          "type": "string",
+          "enum": ["Always", "IfNotPresent", "Never"]
+        }
+      },
+      "required": ["repository", "pullPolicy"]
+    },
+    "argocdNamespace": {
+      "type": "string",
+      "minLength": 1
+    },
+    "extraSecretLabels": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "ignoredLabelPrefixes": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "leaderElect": { "type": "boolean" },
+    "podSecurityContext": { "type": "object" },
+    "securityContext":    { "type": "object" },
+    "livenessProbe":      { "type": "object" },
+    "readinessProbe":     { "type": "object" },
+    "resources":          { "type": "object" },
+    "networkPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" }
+      }
+    },
+    "pdb": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "create":       { "type": "boolean" },
+        "minAvailable": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "rbac": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "create": { "type": "boolean" }
+      }
+    },
+    "serviceAccount": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "create": { "type": "boolean" },
+        "name":   { "type": "string" }
+      }
+    }
+  },
+  "required": ["replicaCount", "argocdNamespace", "leaderElect"]
+}
